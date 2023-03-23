@@ -30,13 +30,13 @@ Adafruit_DPS310 dps2; //address 0x76
 #define vccPin 8
 #define buttonPin 11
 #define buzzerPin 12
-#define DEBUG
+//#define DEBUG
 
 lp_timer sleepTimer;
-const unsigned long DELAY_TIME = 10000;
+const unsigned long DELAY_TIME = 20000;
 //const unsigned long BEEP_DELAY_TIME = 30000;
 
-#define pressureThreshold 1.4
+#define pressureThreshold 2.05
 #define lightThreshold -10
 #define ambientThreshold 200
 
@@ -44,7 +44,6 @@ const unsigned long buzzTime = 50;
 
 int programmingMode;
 bool changeFlag = false;
-
 int lux;
 int luxOffset = 0;
 float pressureOffset = 0.00;
@@ -156,6 +155,14 @@ void handleSleepTimer(){
     } else {
       while (1);
     }
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
     tcs.setInterrupt(true);
     
     //---------------------------------------------------------------
@@ -191,6 +198,9 @@ void handleSleepTimer(){
     //light sensors  --------------------------------------------------
     tcs.setInterrupt(false);
     delay(50);
+    tcs.getRawData(&r, &g, &b, &c);
+    tcs.getRawData(&r, &g, &b, &c);
+    tcs.getRawData(&r, &g, &b, &c);
     tcs.getRawData(&r, &g, &b, &c);
     lux = tcs.calculateLux(r, g, b); //calculate ambient light
     tcs.setInterrupt(true);
@@ -239,6 +249,14 @@ void handleSleepTimer(){
     } else {
       while (1);
     }
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
     tcs.setInterrupt(true);
     
     //---------------------------------------------------------------
@@ -279,7 +297,9 @@ void handleSleepTimer(){
     
     tcs.setInterrupt(false); //inverted, false = on; true = off
     delay(50);
-    uint16_t r, g, b, c, colorTemp, lux;
+    tcs.getRawData(&r, &g, &b, &c);
+    tcs.getRawData(&r, &g, &b, &c);
+    tcs.getRawData(&r, &g, &b, &c);
     tcs.getRawData(&r, &g, &b, &c);
     lux = tcs.calculateLux(r, g, b);
     tcs.setInterrupt(true);
@@ -302,7 +322,7 @@ void handleSleepTimer(){
     
     
     //buzzer --------------------------------------------------
-    if ((lux - luxOffset < lightThreshold) && (pressure_event2.pressure - pressure_event.pressure - pressureOffset > pressureThreshold)){
+    if ((lux - luxOffset <= lightThreshold) && (pressure_event2.pressure - pressure_event.pressure - pressureOffset >= pressureThreshold)){
       digitalWrite(buzzerPin, HIGH);
       delay(500);
       digitalWrite(buzzerPin, LOW);
@@ -333,7 +353,7 @@ void handleSleepTimer(){
 
       changeFlag = false;
       //sleepTimer.startTimer(DELAY_TIME, handleSleepTimer);
-      beep(5, 500, 2000);
+      beep(3, 50, 2000);
     }
     
   }
