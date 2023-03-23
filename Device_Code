@@ -22,22 +22,25 @@ unsigned short ADVERT_INTERVAL = 750; // default it 500, 750ms gives 13 advert p
 lp_timer BLE_Timer;
 //const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
 
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_480MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X);
+
 Adafruit_DPS310 dps; //address 0x77
 Adafruit_DPS310 dps2; //address 0x76
 
 #define vccPin 8
 #define buttonPin 11
 #define buzzerPin 12
-//#define DEBUG
+#define DEBUG
 
 lp_timer sleepTimer;
-const unsigned long DELAY_TIME = 20000;
-const unsigned long BEEP_DELAY_TIME = 30000;
+const unsigned long DELAY_TIME = 10000;
+//const unsigned long BEEP_DELAY_TIME = 30000;
 
-#define pressureThreshold 1.2
-#define lightThreshold -45
+#define pressureThreshold 1.4
+#define lightThreshold -10
 #define ambientThreshold 200
+
+const unsigned long buzzTime = 50;
 
 int programmingMode;
 bool changeFlag = false;
@@ -63,7 +66,7 @@ void turn_off(){
   }
 }
 
-void setAdvertData(int lux, float diff){
+void setAdvertData(int lux, float diff, bool alarmState){
   //update bluetooth --------------------------------------
   sfData = "QI";
   sfData += '_';
@@ -71,6 +74,12 @@ void setAdvertData(int lux, float diff){
   sfData += '*';
   sfData.print(diff,2); // only one decimal place
   sfData += '@';
+
+  if (alarmState){
+    sfData += "T";
+  } else{
+    sfData += "F";
+  }
   
   ble.setAdvertisedName(sfData.c_str());
   
@@ -123,6 +132,34 @@ void handleSleepTimer(){
 
     delay(4500);
 
+    //init vcc, sda, scl
+    digitalWrite(vccPin, HIGH);
+    Wire.begin();
+    delay(500);
+
+    //init pressure (dps)-------------------------------------------------
+     if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
+      while (1) yield();
+    }
+    if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
+      while (1) yield();
+    }
+    
+    dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+    dps.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+  
+    dps2.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+    dps2.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+
+    //init light sensor----------------------------------------------
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
+    tcs.setInterrupt(true);
+    
+    //---------------------------------------------------------------
+
     //pressure sensors  --------------------------------------------------
     
     while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
@@ -167,13 +204,46 @@ void handleSleepTimer(){
     programmingMode = 1;
     
     beep(2, 250, 250);
+
+    //turn off vcc & wires
+    digitalWrite(vccPin, LOW);
+    Wire.end();
+    pinMode(9, INPUT);
+    pinMode(10, INPUT);
     
   }
   
   if (programmingMode == 2){ //regular cycle
-  
-    //pressure sensors  --------------------------------------------------
+
+    //init vcc, sda, scl
+    digitalWrite(vccPin, HIGH);
+    Wire.begin();
+    delay(500);
+
+    //init pressure (dps)-------------------------------------------------
+     if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
+      while (1) yield();
+    }
+    if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
+      while (1) yield();
+    }
     
+    dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+    dps.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+  
+    dps2.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+    dps2.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+
+    //init light sensor----------------------------------------------
+    if (tcs.begin()) { 
+    } else {
+      while (1);
+    }
+    tcs.setInterrupt(true);
+    
+    //---------------------------------------------------------------
+
+    //pressure sensors  --------------------------------------------------
     while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
       return; // wait until there's something to read from *both* sensors
     }
@@ -206,16 +276,30 @@ void handleSleepTimer(){
   #endif
     
     if (lux < ambientThreshold){*/
+    
     tcs.setInterrupt(false); //inverted, false = on; true = off
     delay(50);
+    uint16_t r, g, b, c, colorTemp, lux;
     tcs.getRawData(&r, &g, &b, &c);
     lux = tcs.calculateLux(r, g, b);
     tcs.setInterrupt(true);
   
   #ifdef DEBUG
       Serial.print("Lux Change: "); Serial.println(lux - luxOffset, DEC);
+      Serial.print("raw r: "); Serial.println(r);
+      Serial.print("raw g: "); Serial.println(g);
+      Serial.print("raw b: "); Serial.println(b);
+      Serial.print("raw c: "); Serial.println(c);
   #endif
     //}
+  
+
+    //turn off vcc & wires
+    digitalWrite(vccPin, LOW);
+    Wire.end();
+    pinMode(9, INPUT);
+    pinMode(10, INPUT);
+    
     
     //buzzer --------------------------------------------------
     if ((lux - luxOffset < lightThreshold) && (pressure_event2.pressure - pressure_event.pressure - pressureOffset > pressureThreshold)){
@@ -223,20 +307,23 @@ void handleSleepTimer(){
       delay(500);
       digitalWrite(buzzerPin, LOW);
       changeFlag = true;
+      setAdvertData((lux - luxOffset), (pressure_event2.pressure - pressure_event.pressure - pressureOffset), true);
       //sleepTimer.startTimer(BEEP_DELAY_TIME, handleSleepTimer);
+    } else {
+      setAdvertData((lux - luxOffset), (pressure_event2.pressure - pressure_event.pressure - pressureOffset), false);  // pick up latest values
     }
-  
-    setAdvertData((lux - luxOffset), (pressure_event2.pressure - pressure_event.pressure - pressureOffset));  // pick up latest values
     delay(500);
     ble.begin();
+  
   #ifdef DEBUG
     Serial.print("start ble "); Serial.println(millis());
   #endif
+  
     //BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
   }
 
   if (programmingMode == 3){
-    beep(1, 25, 0);
+    beep(1, buzzTime, 0);
 
     if (digitalRead(buttonPin) == HIGH){
 
@@ -278,54 +365,6 @@ void setup() {
 
   delay(1000);
 
-  //init tcs ------------------------------------------------------------------
-  if (tcs.begin()) { 
-    
-#ifdef DEBUG
-    Serial.println("Found sensor");
-#endif
-
-  } else {
-    
-#ifdef DEBUG
-    Serial.println("No TCS34725 found ... check your connections");
-#endif
-
-    while (1);
-  }
-
-  tcs.setInterrupt(true); //inverted, false = on; true = off
-  
-  //init dps(es) --------------------------------------------------------------
-  if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
-    
-#ifdef DEBUG
-    Serial.println("Failed to find DPS 0x76");
-#endif
-
-    while (1) yield();
-  }
-  if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
-
-#ifdef DEBUG
-    Serial.println("Failed to find DPS 0x77");
-#endif
-
-    while (1) yield();
-  }
-
-#ifdef DEBUG
-  Serial.println("BOTH DPS SENSORS OK!");
-#endif
-
-  dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
-  dps.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
-
-  dps2.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
-  dps2.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
-
-  //turn_off(); //turn off all leds and buzzer when done (TESTING)
-
 #ifdef DEBUG
   Serial.println();
   /*for (int i = 10; i > 0; i--) {
@@ -343,15 +382,12 @@ void setup() {
   handleSleepTimer(); // sets name and measurement data
   
   ble.begin();
+  
 #ifdef DEBUG
   Serial.println(" BLE started");
   Serial.println("setup() finished");
 #endif
-
 }
-
-
-
 
 void loop() {
 #ifdef DEBUG
