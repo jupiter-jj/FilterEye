@@ -20,7 +20,7 @@ cSF(sfData, MAX_DATA_LEN); // Local name and formatted measurements SafeString w
 unsigned short ADVERT_INTERVAL = 750; // default it 500, 750ms gives 13 advert packets in the 10 secs
 
 lp_timer BLE_Timer;
-const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
+//const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_480MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
 Adafruit_DPS310 dps; //address 0x77
@@ -29,7 +29,7 @@ Adafruit_DPS310 dps2; //address 0x76
 #define vccPin 8
 #define buttonPin 11
 #define buzzerPin 12
-#define DEBUG
+//#define DEBUG
 
 lp_timer sleepTimer;
 const unsigned long DELAY_TIME = 20000;
@@ -82,12 +82,12 @@ void setAdvertData(int lux, float diff){
 
 
 
-void stopAdvert() {
+/*void stopAdvert() {
   ble.end();
 #ifdef DEBUG
   Serial.print("stop ble "); Serial.println(millis());
 #endif
-}
+}*/
 
 
 
@@ -232,11 +232,11 @@ void handleSleepTimer(){
   #ifdef DEBUG
     Serial.print("start ble "); Serial.println(millis());
   #endif
-    BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
+    //BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
   }
 
   if (programmingMode == 3){
-    beep(1, 2000, 0);
+    beep(1, 25, 0);
 
     if (digitalRead(buttonPin) == HIGH){
 
@@ -274,8 +274,9 @@ void setup() {
   //Serial.setPins(30, 29);
   Serial.begin(115200); //init serial monitor
   //while (!Serial) delay(10);
-  delay(1000);
 #endif
+
+  delay(1000);
 
   //init tcs ------------------------------------------------------------------
   if (tcs.begin()) { 
