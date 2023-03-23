@@ -20,51 +20,47 @@ Adafruit_BMP280 bmp; //define the sensor as bmp (type bmp to access data)
 #define buttonPin 6
 
 //button var
-unsigned long clickTime = 0
+unsigned long clickTime = 0;
+unsigned long debounceTime = 0;
 bool clickBool = false;
 bool calibrateBool = false;
 bool lightBool = false;
 bool pressureBool = false;
+int buttonStatus = 0;
 #define noLightConst 150 //number that shows how little ambient light is considered "dark" or "nighttime"
 #define holdTimeConst 2000 //how long user has to hold button to trigger calibration sequence
-#define lightThreshold 450 //POSITIVE VALUE (white RLI - darker RLI)
+#define debounceTimeConst 150 //milliseconds between button debouncer changing status
+#define lightThreshold -450 //NEGATIVE VALUE (darker RLI - white RLI)
 #define pressureThreshold -5 //NEGATIVE VALUE (lower pressure - higher pressure)
-#define sleepTimeConst 3600000 //how long arduino sleeps before taking a reading
+#define sleepTimeConst 3600000 //how long arduino sleeps before taking a reading (1hr = 3600000ms)
+#define sleepTimeConstAlarm 600000 //how long arduino sleeps before buzzing again (10min = 600000ms)
+
 
 
 //0 = no interaction; 1 = pressed; 2 = JUST released
 int debounce(){
   if (digitalRead(buttonPin) == HIGH){
-    button = 1;
+    button = HIGH;
   }  
   
   else{
-    button = 0;
+    button = LOW;
   }
 
-  if ((button == 1)  && (last_button == 0)){
-    last_button = button;
+  if ((button == HIGH)  && (last_button == LOW)){
     return (1);
   }
    
-  else if ((button == 0) && (last_button == 1)){
-    last_button = button;
-    return (2);
-  }
-
-  else if ((button == 1)  && (last_button == 1)){
-    last_button = button;
-    return (1);
-  }
-   
-  else if ((button == 0) && (last_button == 0)){
-    last_button = button;
+  else if ((button == LOW) && (last_button == HIGH)){
     return (2);
   }
 
   else{
     return (0);
   }
+
+  last_button = button;
+
 }
 
 void setup() {
@@ -117,7 +113,7 @@ void loop() {
   //PRINT STATEMENTS -----------------------------------------------
   /*lux = tcs.calculateLux(r, g, b);
   digitalWrite(ledPinRLI, LOW); //turn on rli LED
-  //look for Lux 
+  //pring out **lux**
   Serial.print("Lux: "); 
   Serial.println(lux, DEC);
 
@@ -126,18 +122,28 @@ void loop() {
   Serial.print(bmp.readPressure());
   Serial.println(" Pa");
   Serial.println(" ");*/
+  //----------------------------------------------------------------
 
-  
-  if (debounce() == 1){ //if button is ever pressed, turn off buzzer and ledPin
+  if (millis()-debounceTime >= debounceTimeConst){
+    buttonStatus = debounce()
+    debounceTime = millis()
+  }
+
+  if (buttonStatus == 1) { //if user presses button nad timer hasn't started yet, start timer
+    Serial.println("BUTTON PRESSED")
     digitalWrite(buzzerPin, LOW);
     digialWrite(ledPinStatus, LOW);
-  }
-  
-  if ((debounce() == 1) && (!clickBool)) { //if user presses button nad timer hasn't started yet, start timer
     clickTime = millis();
     clickBool = true;
+    lightBool = false;
+    pressureBool = false;
   }
-  else if ((debounce() == 1) && (clickBool) && (millis()-clickTime >= holdTimeConst)) { //is user has help button for more than x amount of time, start calibration sequence
+
+  if (buttonStatus == 2){ //reset timer if button is released
+    clickBool = false;
+  }
+
+  if ((clickBool) && (millis()-clickTime >= holdTimeConst)) { //is user has help button for more than x amount of time, start calibration sequence
     clickBool = false;
     digitalWrite(ledPinStatus, HIGH);
     delay(250)
@@ -149,9 +155,7 @@ void loop() {
     LowPower.deepSleep(sleepTimeConst)
   }
 
-  if (debounce() == 0){ //reset timer if button is released
-    clickBool = false;
-  }
+
 
   //CALIBRATION ----------------------------------------------------
   if (calibrationBool){
@@ -183,13 +187,21 @@ void loop() {
     //look for Lux 
     if (lux < noLightConst){
       digitalWrite(ledPinRLI, HIGH);
-      lux = tcs.calculateLux(r, g, b); //check light if dark
-      currentLight = lux;
+      delay(100)
+      currentLight = tcs.calculateLux(r, g, b); //check light if dark
+      digitalWrite(ledPinRLI, LOW)
     }
-    currentPressure = bmp.readPressure(); //check pressure regardless
+    currentPressure = bmp.readPressure(); //check pressure regardless\
+
+    Serial.println("")
+    Serial.print("LIGHT DIFF: ")
+    Serial.println(currentLight - calibrationLight)
+
+    Serial.print("PRESSURE DIFF: ")
+    Serial.println(currentPressure - calibrationPressure)
 
     //comparing new readings to calibration readings ---------------------------------------
-    if currentLight - calibrationLight >= lightThreshold{
+    if currentLight - calibrationLight <= lightThreshold{
       lightBool = true;
       Serial.println("")
       Serial.println(" ---------- LIGHT BOOLEAN TRIGGERED ---------- ")
@@ -199,6 +211,7 @@ void loop() {
       pressureBool = true;
       Serial.println("")
       Serial.println(" ---------- PRESSURE BOOLEAN TRIGGERED ---------- ")
+
     }
 
     if (pressureBool && lightBool){
@@ -209,11 +222,16 @@ void loop() {
       Serial.println("")
       Serial.println("")
       Serial.println(" ---------- REPLACE FILTER ---------- ")
+      delay(5000)
+      LowPower.deepSleep(sleepTimeConstAlarm)
+    }
+    else{
+      LowPower.deepSleep(sleepTimeConst); //sleep for one hour
     }
 
     //--------------------------------------------------------------------------------------
 
-    LowPower.deepSleep(sleepTimeConst); //sleep for one hour
+    
 
   }
   
