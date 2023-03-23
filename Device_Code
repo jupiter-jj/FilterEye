@@ -9,8 +9,9 @@ BLEPeripheral ble;
 const size_t MAX_DATA_LEN = 26;
 cSF(sfData, MAX_DATA_LEN); // Local name and formatted measurements SafeString will limit data to this length. Excess data is dropped NOT truncated see SafeString docs/tutorials
 unsigned short ADVERT_INTERVAL = 750; // default it 500, 750ms gives 13 advert packets in the 10 secs
-const unsigned long BLE_ADVERT_MS = 10ul * 1000; // advertise for 10sec at 750ms intervals i.e. ~13 advert packets
-const unsigned long BLE_NO_ADVERT_MS = 20ul * 1000; // go silent for 20sec
+
+lp_timer BLE_Timer;
+const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_300MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
 Adafruit_DPS310 dps; //address 0x77
@@ -32,14 +33,14 @@ void turn_off(){
   }
 }
 
-void setAdvertData(int lux, int diff){
+void setAdvertData(int lux, float diff){
   //update bluetooth --------------------------------------
-  sfData = "FE";
+  sfData = "QI";
   sfData += '_';
   sfData.print(lux); // only one decimal place
-  sfData += '_';
-  sfData.print(diff,1); // only one decimal place
-  sfData += '_';
+  sfData += '*';
+  sfData.print(diff,2); // only one decimal place
+  sfData += '@';
   
   ble.setAdvertisedName(sfData.c_str());
   
@@ -48,6 +49,17 @@ void setAdvertData(int lux, int diff){
   Serial.println(sfData);
 #endif
 }
+
+
+
+void stopAdvert() {
+  ble.end();
+#ifdef DEBUG
+  Serial.print("stop ble "); Serial.println(millis());
+#endif
+}
+
+
 
 void handleSleepTimer(){
   //init sensor variables
@@ -100,15 +112,24 @@ void handleSleepTimer(){
 #endif
   }
   
-  setAdvertData(lux, pressure_event2.pressure - pressure_event.pressure);
-  
   //buzzer --------------------------------------------------
   if ((lux < lightThreshold) || (pressure_event2.pressure - pressure_event.pressure > pressureThreshold)){
     digitalWrite(buzzerPin, HIGH);
     delay(500);
     digitalWrite(buzzerPin, LOW);
   }
+
+  setAdvertData(lux, pressure_event2.pressure - pressure_event.pressure);  // pick up latest values
+  ble.begin();
+#ifdef DEBUG
+  Serial.print("start ble ");; Serial.println(millis());
+#endif
+  BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
+  
 }
+
+
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -118,13 +139,16 @@ void setup() {
   
   //init buzzer -------------------------------------------
   pinMode(buzzerPin, OUTPUT_D0H1);
+  pinMode(7, OUTPUT_D0H1);
+  digitalWrite(7, HIGH);
   
   //init serial ------------------------------------------- 
 
 #ifdef DEBUG
-  Serial.setPins(30, 29);
+  //Serial.setPins(30, 29);
   Serial.begin(115200); //init serial monitor
-  while (!Serial) delay(10);
+  //while (!Serial) delay(10);
+  delay(1000);
 #endif
 
   //init tcs ------------------------------------------------------------------
