@@ -24,8 +24,8 @@ lp_timer BLE_Timer;
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X);
 
-Adafruit_DPS310 dps; //address 0x77
-Adafruit_DPS310 dps2; //address 0x76
+Adafruit_DPS310 dps; //address 0x77, remote
+Adafruit_DPS310 dps2; //address 0x76, local
 
 #define vccPin 8
 #define buttonPin 11
@@ -138,10 +138,20 @@ void handleSleepTimer(){
 
     //init pressure (dps)-------------------------------------------------
      if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
-      while (1) yield();
+      //turn off vcc & wires
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
+      return;
     }
     if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
-      while (1) yield();
+      //turn off vcc & wires
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
+      return;
     }
     
     dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
@@ -170,10 +180,12 @@ void handleSleepTimer(){
     //pressure sensors  --------------------------------------------------
     
     while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
-      return; // wait until there's something to read from *both* sensors
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
+      return;
     }
-  
-    delay(2500);
     
     //take measurements
     dps.getEvents(&temp_event, &pressure_event);
@@ -232,10 +244,20 @@ void handleSleepTimer(){
 
     //init pressure (dps)-------------------------------------------------
      if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
-      while (1) yield();
+      //turn off vcc & wires
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
+      return;
     }
     if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
-      while (1) yield();
+      //turn off vcc & wires
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
+      return;
     }
     
     dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
@@ -262,11 +284,13 @@ void handleSleepTimer(){
     //---------------------------------------------------------------
 
     //pressure sensors  --------------------------------------------------
-    while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
+    while (!dps.pressureAvailable() || !dps2.pressureAvailable()) {
+      digitalWrite(vccPin, LOW);
+      Wire.end();
+      pinMode(9, INPUT);
+      pinMode(10, INPUT);
       return; // wait until there's something to read from *both* sensors
     }
-  
-    delay(2500);
     
     //take measurements
     dps.getEvents(&temp_event, &pressure_event);
