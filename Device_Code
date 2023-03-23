@@ -20,9 +20,9 @@ cSF(sfData, MAX_DATA_LEN); // Local name and formatted measurements SafeString w
 unsigned short ADVERT_INTERVAL = 750; // default it 500, 750ms gives 13 advert packets in the 10 secs
 
 lp_timer BLE_Timer;
-const unsigned long BLE_ADVERT_MS = 20ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
+const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms intervals i.e. ~13 advert packets
 
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_300MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_480MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
 Adafruit_DPS310 dps; //address 0x77
 Adafruit_DPS310 dps2; //address 0x76
 
@@ -32,11 +32,29 @@ Adafruit_DPS310 dps2; //address 0x76
 #define DEBUG
 
 lp_timer sleepTimer;
-const unsigned long DELAY_TIME = 25000;
+const unsigned long DELAY_TIME = 20000;
+const unsigned long BEEP_DELAY_TIME = 30000;
 
-#define pressureThreshold 20
-#define lightThreshold 50
+#define pressureThreshold 1.2
+#define lightThreshold -45
 #define ambientThreshold 200
+
+int programmingMode;
+bool changeFlag = false;
+
+int lux;
+int luxOffset = 0;
+float pressureOffset = 0.00;
+
+void beep(int times, int short_wait, int long_wait){
+  for (int i=0; i<times; i++){
+    digitalWrite(buzzerPin, HIGH);
+    delay(short_wait);
+    digitalWrite(buzzerPin, LOW);
+
+    delay(long_wait);
+  }
+}
 
 void turn_off(){
   while (1){
@@ -74,26 +92,97 @@ void stopAdvert() {
 
 
 void handleSleepTimer(){
-#ifdef DEBUG
-  Serial.println("WAKE");
-#endif
-  
+  //programmingMode 1 = calibration cycle
+  //programmingMode 2 = regular cycle
+  //programmingMode 3 = beeping cycle
+
   //init sensor variables
   sensors_event_t temp_event, pressure_event;
   sensors_event_t temp_event2, pressure_event2;
   uint16_t r, g, b, c, colorTemp, lux;
-
-  //pressure sensors  --------------------------------------------------
   
-  while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
-    return; // wait until there's something to read from *both* sensors
+  if (changeFlag){
+    programmingMode = 3;
   }
-
-  delay(2500);
+  else if (digitalRead(buttonPin) == HIGH){
+    programmingMode = 1;
+  }
+  else{
+    programmingMode = 2;
+  }
   
-  //take measurements
-  dps.getEvents(&temp_event, &pressure_event);
-  dps2.getEvents(&temp_event2, &pressure_event2);
+#ifdef DEBUG
+  Serial.println("WAKE");
+  Serial.print("programmingMode: ");
+  Serial.println(programmingMode);
+#endif
+
+  if (programmingMode == 1){ //calibration mode
+    //beep
+    beep(2, 250, 250);
+
+    delay(4500);
+
+    //pressure sensors  --------------------------------------------------
+    
+    while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
+      return; // wait until there's something to read from *both* sensors
+    }
+  
+    delay(2500);
+    
+    //take measurements
+    dps.getEvents(&temp_event, &pressure_event);
+    dps2.getEvents(&temp_event2, &pressure_event2);
+  
+#ifdef DEBUG
+  Serial.println();
+  Serial.println("CALIBRATION -----------------");
+  Serial.print(pressure_event.pressure);
+  Serial.print(" hPa (0x76), "); 
+
+  Serial.print(pressure_event2.pressure);
+  Serial.println(" hPa (0x77), "); 
+
+  Serial.print(F("PRESSURE - CALIBRATION OFFSET: "));//0x77 sensor minus 0x76 sensor
+  Serial.print(pressure_event2.pressure - pressure_event.pressure);
+  Serial.println(" hPa (0x77-0x76)"); 
+#endif
+
+    pressureOffset = pressure_event2.pressure - pressure_event.pressure;
+
+    //light sensors  --------------------------------------------------
+    tcs.setInterrupt(false);
+    delay(50);
+    tcs.getRawData(&r, &g, &b, &c);
+    lux = tcs.calculateLux(r, g, b); //calculate ambient light
+    tcs.setInterrupt(true);
+  
+ #ifdef DEBUG
+     Serial.print("LUX - CALIBRATION OFFSET: "); 
+     Serial.println(lux, DEC);
+ #endif
+
+    luxOffset = lux;
+    programmingMode = 1;
+    
+    beep(2, 250, 250);
+    
+  }
+  
+  if (programmingMode == 2){ //regular cycle
+  
+    //pressure sensors  --------------------------------------------------
+    
+    while (!dps.temperatureAvailable() || !dps.pressureAvailable() || !dps2.temperatureAvailable() || !dps2.pressureAvailable()) {
+      return; // wait until there's something to read from *both* sensors
+    }
+  
+    delay(2500);
+    
+    //take measurements
+    dps.getEvents(&temp_event, &pressure_event);
+    dps2.getEvents(&temp_event2, &pressure_event2);
   
 #ifdef DEBUG
   Serial.print(pressure_event.pressure);
@@ -103,47 +192,64 @@ void handleSleepTimer(){
   Serial.print(" hPa (0x77), "); 
 
   Serial.print(F("diff = "));//0x77 sensor minus 0x76 sensor
-  Serial.print(pressure_event2.pressure - pressure_event.pressure);
+  Serial.print((pressure_event2.pressure - pressure_event.pressure) - pressureOffset);
   Serial.println(" hPa (0x77-0x76)"); 
 #endif
 
-  //light sensors  --------------------------------------------------
-  tcs.setInterrupt(true);
-  tcs.getRawData(&r, &g, &b, &c);
-  lux = tcs.calculateLux(r, g, b); //calculate ambient light
-
-#ifdef DEBUG
-  Serial.print("Ambient Lux: "); Serial.println(lux, DEC);
-#endif
+    //light sensors  --------------------------------------------------
+    /*tcs.setInterrupt(true);
+    tcs.getRawData(&r, &g, &b, &c);
+    lux = tcs.calculateLux(r, g, b); //calculate ambient light
   
-  if (lux < ambientThreshold){
+  #ifdef DEBUG
+    Serial.print("Ambient Lux: "); Serial.println(lux, DEC);
+  #endif
+    
+    if (lux < ambientThreshold){*/
     tcs.setInterrupt(false); //inverted, false = on; true = off
     delay(50);
     tcs.getRawData(&r, &g, &b, &c);
     lux = tcs.calculateLux(r, g, b);
     tcs.setInterrupt(true);
-
-#ifdef DEBUG
-    Serial.print("Lux: "); Serial.println(lux, DEC);
-#endif
-  }
   
-  //buzzer --------------------------------------------------
-  if ((lux < lightThreshold) || (pressure_event2.pressure - pressure_event.pressure > pressureThreshold)){
-    digitalWrite(buzzerPin, HIGH);
+  #ifdef DEBUG
+      Serial.print("Lux Change: "); Serial.println(lux - luxOffset, DEC);
+  #endif
+    //}
+    
+    //buzzer --------------------------------------------------
+    if ((lux - luxOffset < lightThreshold) && (pressure_event2.pressure - pressure_event.pressure - pressureOffset > pressureThreshold)){
+      digitalWrite(buzzerPin, HIGH);
+      delay(500);
+      digitalWrite(buzzerPin, LOW);
+      changeFlag = true;
+      //sleepTimer.startTimer(BEEP_DELAY_TIME, handleSleepTimer);
+    }
+  
+    setAdvertData((lux - luxOffset), (pressure_event2.pressure - pressure_event.pressure - pressureOffset));  // pick up latest values
     delay(500);
-    digitalWrite(buzzerPin, LOW);
+    ble.begin();
+  #ifdef DEBUG
+    Serial.print("start ble "); Serial.println(millis());
+  #endif
+    BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
   }
 
-  setAdvertData(lux, pressure_event2.pressure - pressure_event.pressure);  // pick up latest values
-  delay(500);
-  ble.begin();
+  if (programmingMode == 3){
+    beep(1, 2000, 0);
+
+    if (digitalRead(buttonPin) == HIGH){
+
 #ifdef DEBUG
-  Serial.print("start ble "); Serial.println(millis());
+  Serial.println("BUZZER EXIT");
 #endif
-  BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
 
-
+      changeFlag = false;
+      //sleepTimer.startTimer(DELAY_TIME, handleSleepTimer);
+      beep(5, 500, 2000);
+    }
+    
+  }
   
 }
 
@@ -160,6 +266,7 @@ void setup() {
   pinMode(buzzerPin, OUTPUT_D0H1);
   pinMode(vccPin, OUTPUT_D0H1);
   digitalWrite(vccPin, HIGH);
+  pinMode(buttonPin, INPUT);
   
   //init serial ------------------------------------------- 
 
@@ -186,6 +293,8 @@ void setup() {
     while (1);
   }
 
+  tcs.setInterrupt(true); //inverted, false = on; true = off
+  
   //init dps(es) --------------------------------------------------------------
   if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
     
