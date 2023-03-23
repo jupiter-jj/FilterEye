@@ -16,8 +16,9 @@ const unsigned long BLE_ADVERT_MS = 15ul * 1000; // advertise for 15sec at 750ms
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_300MS, TCS34725_GAIN_1X); //initialize light sensor as tcs
 Adafruit_DPS310 dps; //address 0x77
 Adafruit_DPS310 dps2; //address 0x76
+
+#define vccPin 11
 #define buzzerPin 12
-#define DEBUG
 
 lp_timer sleepTimer;
 const unsigned long DELAY_TIME = 10000;
@@ -25,6 +26,10 @@ const unsigned long DELAY_TIME = 10000;
 #define pressureThreshold 20
 #define lightThreshold 50
 #define ambientThreshold 200
+
+#define DEBUG
+
+
 
 void turn_off(){
   while (1){
@@ -62,7 +67,64 @@ void stopAdvert() {
 
 
 void handleSleepTimer(){
-  //init sensor variables
+  digitalWrite(vccPin, HIGH); //turn on power for pressure sensors
+  delay(200);
+
+
+
+   //re-initialize all sensors ------------------------------------------------------------------
+  delay(500);
+  
+  //reinit tcs
+  if (tcs.begin()) { 
+    tcs.setInterrupt(true); //inverted, false = on; true = off
+    
+#ifdef DEBUG
+    Serial.println("TCS re-initialized");
+#endif
+
+  } else {
+    
+#ifdef DEBUG
+    Serial.println("No TCS34725 found ... check your connections");
+#endif
+
+    while (1);
+  }
+  
+  //reinit dps(es) -------------------------------------------------------------
+  if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
+    
+#ifdef DEBUG
+    Serial.println("Failed to find DPS 0x76");
+#endif
+
+    while (1) yield();
+  }
+  
+  if (! dps2.begin_I2C(0x77)) {             // Can pass in I2C address here
+
+#ifdef DEBUG
+    Serial.println("Failed to find DPS 0x77");
+#endif
+
+    while (1) yield();
+  }
+
+#ifdef DEBUG
+  Serial.println("REINIT BOTH DPS SENSORS OK!");
+#endif
+
+  dps.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+  dps.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+
+  dps2.configurePressure(DPS310_64HZ, DPS310_64SAMPLES);
+  dps2.configureTemperature(DPS310_64HZ, DPS310_64SAMPLES);
+
+
+
+  
+  //init sensor variables ----------------------------------------------------------------------------
   sensors_event_t temp_event, pressure_event;
   sensors_event_t temp_event2, pressure_event2;
   uint16_t r, g, b, c, colorTemp, lux;
@@ -78,6 +140,7 @@ void handleSleepTimer(){
   //take measurements
   dps.getEvents(&temp_event, &pressure_event);
   dps2.getEvents(&temp_event2, &pressure_event2);
+  
   
 #ifdef DEBUG
   Serial.print(pressure_event.pressure);
@@ -125,6 +188,7 @@ void handleSleepTimer(){
   Serial.print("start ble ");; Serial.println(millis());
 #endif
   BLE_Timer.startDelay(BLE_ADVERT_MS, stopAdvert); // stop in 15sec
+  digitalWrite(vccPin, LOW); //turn off vcc
   
 }
 
@@ -139,23 +203,26 @@ void setup() {
   
   //init buzzer -------------------------------------------
   pinMode(buzzerPin, OUTPUT_D0H1);
-  pinMode(7, OUTPUT_D0H1);
-  digitalWrite(7, HIGH);
+
+  //init pressure sensors vcc ----------------------------------
+  pinMode(vccPin, OUTPUT_D0H1);
   
   //init serial ------------------------------------------- 
 
 #ifdef DEBUG
-  //Serial.setPins(30, 29);
-  Serial.begin(115200); //init serial monitor
-  //while (!Serial) delay(10);
-  delay(1000);
+  Serial.setPins(30, 29); // Rx 30 == D0, Tx 29 == D1
+  Serial.begin(115200);
+  Serial.println("SERIAL MONITOR INIT");
 #endif
 
   //init tcs ------------------------------------------------------------------
+  digitalWrite(vccPin, HIGH);
+  delay(500);
   if (tcs.begin()) { 
+    tcs.setInterrupt(true); //inverted, false = on; true = off
     
 #ifdef DEBUG
-    Serial.println("Found sensor");
+    Serial.println("Found tcs sensor");
 #endif
 
   } else {
@@ -168,6 +235,7 @@ void setup() {
   }
 
   //init dps(es) --------------------------------------------------------------
+  
   if (! dps.begin_I2C(0x76)) {             // Can pass in I2C address here
     
 #ifdef DEBUG
@@ -197,9 +265,9 @@ void setup() {
 
   //turn_off(); //turn off all leds and buzzer when done (TESTING)
 
+  digitalWrite(vccPin, LOW);
+
 #ifdef DEBUG
-  Serial.setPins(30, 29); // Rx 30 == D0, Tx 29 == D1
-  Serial.begin(115200);
   Serial.println();
   for (int i = 10; i > 0; i--) {
     Serial.print(' '); Serial.print(i);
